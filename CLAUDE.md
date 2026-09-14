@@ -117,7 +117,7 @@ RLS está habilitado nas duas tabelas — só o backend acessa o banco, usando a
 | `SUPABASE_KEY`      | Chave **service_role** (não a `anon`)                           | preenchido                                |
 | `OPENAI_API_KEY`    | Chave da OpenAI                                                 | preenchido a partir do `.env.dev`         |
 | `OPENAI_MODEL`      | Modelo usado no resumo                                          | `gpt-4o-mini` (padrão)                    |
-| `WHATSAPP_GROUP_ID` | ID do grupo monitorado (`xxxxx@g.us`)                            | **em aberto** — só se descobre configurando a EvolutionAPI e olhando o payload que ela manda |
+| `WHATSAPP_GROUP_ID` | ID do grupo monitorado (`xxxxx@g.us`)                            | `120363319840837485@g.us` (grupo "Geral") |
 | `CRON_SCHEDULE`     | Expressão cron do resumo diário                                 | `0 22 * * *`                              |
 | `CRON_TIMEZONE`     | Timezone do cron                                                | `America/Sao_Paulo`                       |
 
@@ -155,23 +155,100 @@ docker compose up -d --build
 # frontend: http://localhost:8080
 ```
 
-O frontend chama o backend em `http://localhost:3000` — configurado em
-`window.APP_CONFIG.apiBaseUrl` no `<script>` inline de `frontend/index.html`
-(o navegador acessa portas publicadas no host, não o nome do serviço na rede
-interna do Compose, então isso é intencional e precisa ser ajustado ali se o
-backend for exposto em outro host/porta em produção).
+O frontend descobre o backend sozinho: `window.APP_CONFIG.apiBaseUrl`
+(`<script>` inline em `frontend/index.html`) fica **vazio** por padrão, e o
+`app.js` cai para `${protocolo}//${hostname da página}:3000`. Assim o mesmo
+código funciona em `http://localhost:8080` e em `http://10.192.21.91:8080`
+sem editar arquivo. Só preencha `apiBaseUrl` se o backend for para outro
+host/porta. Importante: o navegador acessa a **porta publicada no host**, não
+o nome do serviço na rede interna do Compose — por isso a URL não é
+`http://backend:3000`.
 
 Testar sem a EvolutionAPI (payload simplificado aceito pelo webhook) e forçar
 a geração de um resumo sem esperar o cron: ver seção "Testando sem a
 EvolutionAPI" no [README.md](./README.md).
 
-## Pontos em aberto / próximos passos
+## Deploy (VM)
 
-- **`WHATSAPP_GROUP_ID` não está preenchido** — falta configurar a
-  EvolutionAPI apontando o webhook para `POST /webhook/evolution` e capturar
-  o `remoteJid` do grupo real.
-- A EvolutionAPI em si (a instância que conecta ao WhatsApp) não faz parte
-  deste repositório/Docker Compose — só o endpoint que a recebe.
+O sistema está rodando na VM `10.192.21.91` (host `ip-10-192-21-91`, AWS,
+Ubuntu), em `/home/ubuntu/summar`:
+
+- Frontend: **http://10.192.21.91:8080**
+- Backend: **http://10.192.21.91:3000** (`/health`, `/api/summaries`, `/webhook/evolution`)
+
+Acesso: `ssh -i n8n-evolution-server-keypair.pem ubuntu@10.192.21.91` (chave
+em `Desktop/pair/` na máquina do Nicolas). O Docker na VM **exige `sudo`**
+(`sudo docker compose ...`), e o `sudo` é sem senha.
+
+Essa VM é compartilhada e já hospedava outros serviços antes do Summar —
+**não derrube nem faça prune de nada global**. Containers pré-existentes:
+`lab_evolution_api` (:8081), `evolution-redis-1` (:6380),
+`evolution-postgres-1`, `zetter_test_app` (:3001), `n8n-n8n-1` (:5678),
+`n8n-postgres-1`, `teste-postgres-1`. As portas 3000 e 8080 estavam livres,
+por isso foram mantidas as mesmas do dev. Recursos são apertados: ~1.9 GB de
+RAM total e ~9 GB de disco livre.
+
+Atualizar o deploy (empacota local, envia e rebuilda):
+
+```bash
+tar -czf summar.tar.gz --exclude='.git' --exclude='node_modules' --exclude='.env.dev' summar
+scp -i chave.pem summar.tar.gz ubuntu@10.192.21.91:/home/ubuntu/
+ssh -i chave.pem ubuntu@10.192.21.91 'cd /home/ubuntu && tar -xzf summar.tar.gz && cd summar && sudo docker compose up -d --build'
+```
+
+O `backend/.env` é gitignored, então precisa ir junto no pacote (ou ser criado
+na VM na primeira vez) — sem ele o Compose não sobe.
+
+## Integração com a EvolutionAPI
+
+A EvolutionAPI **não faz parte deste repositório/Compose** — só o endpoint que
+a recebe. A instância usada é a que já rodava na VM: container
+`lab_evolution_api`, API em http://10.192.21.91:8081, painel em `/manager`,
+versão 2.3.6. As chamadas exigem o header `apikey`, cujo valor está na env
+`AUTHENTICATION_API_KEY` do container.
+
+Essa Evolution é **compartilhada** e tem três instâncias. Cada instância
+guarda **uma única** URL de webhook, então **nunca edite o webhook das outras
+duas** — isso mataria silenciosamente os sistemas delas:
+
+| Instância | Webhook aponta para | Sistema |
+| --- | --- | --- |
+| `summar` | `http://10.192.21.91:3000/webhook/evolution` | **este projeto** |
+| `zetter-test` | `http://10.192.21.91:3001/webhook/evolution` | zetter_test_app |
+| `Mockup Cash Back` | `http://10.192.21.91:5678/webhook/...` | n8n |
+
+Não há webhook global (`WEBHOOK_GLOBAL_ENABLED`/`WEBHOOK_GLOBAL_URL` não estão
+definidas), então os eventos de cada instância vão só para o destino dela e
+não há risco de mistura entre os projetos.
+
+Config do webhook da instância `summar` (o que está valendo):
+`enabled: true`, `events: ["MESSAGES_UPSERT"]`, `webhookByEvents: false`,
+`webhookBase64: false`.
+
+⚠️ **`webhookByEvents` tem que ser `false`.** Se for `true`, a Evolution passa
+a chamar `/webhook/evolution/messages-upsert` (nome do evento no fim da URL),
+que **retorna 404** aqui — as mensagens seriam descartadas sem nenhum erro
+visível. Testado.
+
+A URL usa o **IP do host** e não `http://backend:3000`: o container da
+Evolution está em outra rede Docker, então ele alcança o backend pela porta
+publicada no host (mesmo padrão que as outras duas instâncias já usavam).
+
+Para descobrir o ID de um grupo:
+`GET http://10.192.21.91:8081/group/fetchAllGroups/summar?getParticipants=false`
+com o header `apikey`.
+
+## Status da validação
+
+Pipeline testado de ponta a ponta na VM (02/09/2026): payload real de
+`messages.upsert` → filtro de grupo → insert no Supabase → OpenAI →
+`daily_summaries` → `GET /api/summaries`. A OpenAI devolveu resumo coerente
+com visão geral, pontos importantes e tarefas pendentes corretamente
+separados. As mensagens de teste foram removidas do banco depois; ficou
+apenas 1 linha em `daily_summaries` (dia 2026-09-02) como demonstração — o
+cron das 22h sobrescreve esse dia via upsert quando houver mensagens reais.
+
+## Pontos em aberto / próximos passos
 - Sem testes automatizados (fora de escopo da spec original; projeto
   acadêmico).
 - Sem autenticação nas rotas — aceitável para o escopo do projeto, mas seria

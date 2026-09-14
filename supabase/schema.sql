@@ -1,13 +1,8 @@
--- Summar | Schema inicial do Supabase (PostgreSQL)
--- Resumidor diário de grupo de WhatsApp da faculdade
---
--- Este script é idempotente (pode ser executado novamente sem duplicar objetos).
+-- Schema do Summar. Idempotente: pode rodar de novo sem duplicar nada.
 
 create extension if not exists "pgcrypto";
 
--- =========================================================
--- raw_messages: mensagens cruas recebidas via webhook da EvolutionAPI
--- =========================================================
+-- Mensagens cruas recebidas pelo webhook
 create table if not exists public.raw_messages (
   id          uuid primary key default gen_random_uuid(),
   group_id    text not null,
@@ -22,9 +17,7 @@ comment on column public.raw_messages.group_id is 'ID do grupo do WhatsApp (deve
 create index if not exists idx_raw_messages_group_created
   on public.raw_messages (group_id, created_at);
 
--- =========================================================
--- daily_summaries: resumos diários gerados pela OpenAI
--- =========================================================
+-- Resumos diários gerados pela OpenAI
 create table if not exists public.daily_summaries (
   id             uuid primary key default gen_random_uuid(),
   date           date not null unique,
@@ -39,11 +32,6 @@ comment on table public.daily_summaries is 'Resumos diários da conversa do grup
 create index if not exists idx_daily_summaries_date
   on public.daily_summaries (date desc);
 
--- =========================================================
--- Row Level Security
--- As tabelas só são acessadas pelo backend (service_role), que
--- ignora RLS por padrão. Habilitamos RLS para bloquear acesso
--- direto via chave anon a partir do frontend.
--- =========================================================
+-- RLS ligado para bloquear acesso direto com a chave anon
 alter table public.raw_messages enable row level security;
 alter table public.daily_summaries enable row level security;

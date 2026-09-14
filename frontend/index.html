@@ -152,11 +152,9 @@
   </div>
 
   <script>
-    // Config de runtime do frontend estático (sem build step).
-    // Em dev com docker-compose, o navegador acessa o backend pela porta
-    // publicada no host — não pelo nome do serviço na rede interna do Docker.
+    // Vazio = usa o mesmo host da página na porta 3000
     window.APP_CONFIG = {
-      apiBaseUrl: 'http://localhost:3000',
+      apiBaseUrl: '',
     };
   </script>
   <script src="app.js"></script>

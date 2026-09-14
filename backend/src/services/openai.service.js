@@ -21,7 +21,7 @@ Regras:
 - Responda em português do Brasil.
 - Não invente informação que não esteja nas mensagens.`;
 
-/** Formata as mensagens cruas em um log de texto simples para o prompt. */
+// Monta o log da conversa para o prompt
 function formatMessagesForPrompt(messages) {
   return messages
     .map((msg) => {
@@ -36,11 +36,7 @@ function formatMessagesForPrompt(messages) {
     .join('\n');
 }
 
-/**
- * Envia as mensagens do dia para a OpenAI e retorna o resumo estruturado.
- * @param {Array} messages linhas de `raw_messages` de um único dia
- * @returns {{ overview: string, keyPoints: string, pendingTasks: string }}
- */
+// Integração com a OpenAI: gera o resumo do dia
 async function summarizeMessages(messages) {
   const conversationLog = formatMessagesForPrompt(messages);
 

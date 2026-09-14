@@ -1,7 +1,9 @@
-// Summar — frontend (vanilla JS)
-// Busca os resumos diários no backend e renderiza os cards na tela.
+// Busca os resumos no backend e renderiza os cards
 
-const API_BASE_URL = (window.APP_CONFIG && window.APP_CONFIG.apiBaseUrl) || 'http://localhost:3000';
+// Sem apiBaseUrl definido, usa o mesmo host da página na porta 3000
+const API_BASE_URL =
+  (window.APP_CONFIG && window.APP_CONFIG.apiBaseUrl) ||
+  `${window.location.protocol}//${window.location.hostname}:3000`;
 
 const contentEl = document.getElementById('content');
 const refreshBtn = document.getElementById('refreshBtn');
@@ -25,19 +27,19 @@ const ICONS = {
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="h-10 w-10"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/></svg>',
 };
 
-/** Data de hoje em BRT ("YYYY-MM-DD"), consistente com o backend. */
+// Data de hoje em BRT, igual ao backend
 function getTodayBrtDateStr() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
 }
 
-/** Data de ontem em BRT ("YYYY-MM-DD"). */
+// Data de ontem em BRT
 function getYesterdayBrtDateStr() {
   const todayUtcNoon = new Date(`${getTodayBrtDateStr()}T12:00:00Z`);
   todayUtcNoon.setUTCDate(todayUtcNoon.getUTCDate() - 1);
   return todayUtcNoon.toISOString().slice(0, 10);
 }
 
-/** Formata "YYYY-MM-DD" para "quinta-feira, 28 de agosto" (em UTC, para não deslizar de dia). */
+// Formata a data por extenso (em UTC, para não pular de dia)
 function formatLongDate(dateStr) {
   const date = new Date(`${dateStr}T00:00:00Z`);
   const formatted = new Intl.DateTimeFormat('pt-BR', {
@@ -55,7 +57,7 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-/** Quebra um texto tipo "- item\n- item" em uma lista de strings limpas. */
+// Quebra o texto do resumo em uma lista de itens
 function parseBullets(text) {
   if (!text) return [];
   return String(text)
@@ -218,7 +220,7 @@ async function loadSummaries() {
   }
 }
 
-// --- Sidebar mobile ---
+// Sidebar no mobile
 const sidebar = document.getElementById('sidebar');
 const sidebarOverlay = document.getElementById('sidebarOverlay');
 const menuBtn = document.getElementById('menuBtn');
@@ -238,7 +240,7 @@ menuBtn?.addEventListener('click', openSidebar);
 closeSidebarBtn?.addEventListener('click', closeSidebar);
 sidebarOverlay?.addEventListener('click', closeSidebar);
 
-// --- Modal "Como funciona" ---
+// Modal "Como funciona"
 const aboutBtn = document.getElementById('aboutBtn');
 const aboutModal = document.getElementById('aboutModal');
 const closeAboutBtn = document.getElementById('closeAboutBtn');
@@ -259,8 +261,6 @@ aboutModal?.addEventListener('click', (event) => {
   if (event.target === aboutModal) closeAbout();
 });
 
-// --- Refresh ---
 refreshBtn?.addEventListener('click', loadSummaries);
 
-// --- Boot ---
 loadSummaries();

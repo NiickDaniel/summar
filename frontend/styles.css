@@ -1,4 +1,4 @@
-/* Summar — ajustes finos que ficam mais confortáveis fora do Tailwind CDN. */
+/* Ajustes que não dá para fazer direto no Tailwind */
 
 html,
 body {
@@ -15,7 +15,7 @@ body {
   color: #1d4ed8; /* brand-700 */
 }
 
-/* Scrollbar discreta, combinando com a paleta neutra do projeto */
+/* Scrollbar discreta */
 * {
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 transparent; /* slate-300 */
@@ -39,7 +39,7 @@ body {
   background-color: #94a3b8; /* slate-400 */
 }
 
-/* Accordion suave dos cards de resumo, sem precisar calcular altura em JS. */
+/* Accordion dos cards, sem calcular altura no JS */
 .card-body-wrapper {
   display: grid;
   grid-template-rows: 0fr;

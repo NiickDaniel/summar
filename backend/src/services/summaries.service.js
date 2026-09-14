@@ -2,18 +2,11 @@ const supabase = require('../config/supabaseClient');
 const messagesService = require('./messages.service');
 const openaiService = require('./openai.service');
 
-/**
- * Gera (ou regenera) o resumo diário de um dia específico e salva em
- * `daily_summaries`. Se não houver mensagens naquele dia, não cria nada.
- *
- * @param {string} dateStr dia em BRT, formato "YYYY-MM-DD"
- * @returns {object|null} a linha salva, ou null se não havia mensagens
- */
+// Gera o resumo do dia e salva no banco (sem mensagens, não cria nada)
 async function generateAndSaveDailySummary(dateStr) {
   const messages = await messagesService.getMessagesForDate(dateStr);
 
   if (messages.length === 0) {
-    // eslint-disable-next-line no-console
     console.log(`[summaries] Nenhuma mensagem em ${dateStr}, resumo não gerado.`);
     return null;
   }
@@ -36,12 +29,11 @@ async function generateAndSaveDailySummary(dateStr) {
 
   if (error) throw error;
 
-  // eslint-disable-next-line no-console
   console.log(`[summaries] Resumo de ${dateStr} salvo (${messages.length} mensagens).`);
   return data;
 }
 
-/** Lista todos os resumos, do mais recente para o mais antigo. */
+// Lista os resumos do mais recente para o mais antigo
 async function listSummaries() {
   const { data, error } = await supabase
     .from('daily_summaries')

@@ -20,9 +20,7 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Rota não encontrada.' });
 });
 
-// eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  // eslint-disable-next-line no-console
   console.error('[app] Erro não tratado:', err);
   res.status(500).json({ error: 'Erro interno no servidor.' });
 });

@@ -2,9 +2,7 @@ const supabase = require('../config/supabaseClient');
 const env = require('../config/env');
 const { getBrtDayRangeUtc } = require('../utils/date');
 
-/**
- * Salva uma mensagem crua recebida via webhook.
- */
+// Salva no banco uma mensagem recebida pelo webhook
 async function saveRawMessage({ groupId, senderName, content }) {
   const { data, error } = await supabase
     .from('raw_messages')
@@ -16,10 +14,7 @@ async function saveRawMessage({ groupId, senderName, content }) {
   return data;
 }
 
-/**
- * Busca todas as mensagens do grupo monitorado (WHATSAPP_GROUP_ID) em um
- * dia específico (BRT), ordenadas cronologicamente.
- */
+// Busca as mensagens do grupo monitorado em um dia
 async function getMessagesForDate(dateStr) {
   const { startIso, endIso } = getBrtDayRangeUtc(dateStr);
 
