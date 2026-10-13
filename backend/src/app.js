@@ -3,6 +3,8 @@ const cors = require('cors');
 const env = require('./config/env');
 const webhookRoutes = require('./routes/webhook.routes');
 const summariesRoutes = require('./routes/summaries.routes');
+const todosRoutes = require('./routes/todos.routes');
+const settingsRoutes = require('./routes/settings.routes');
 
 const app = express();
 
@@ -15,6 +17,8 @@ app.get('/health', (req, res) => {
 
 app.use('/webhook', webhookRoutes);
 app.use('/api', summariesRoutes);
+app.use('/api', todosRoutes);
+app.use('/api', settingsRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Rota não encontrada.' });

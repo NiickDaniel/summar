@@ -3,7 +3,13 @@
 Resumidor diário do grupo de WhatsApp da faculdade. Captura mensagens via
 webhook da EvolutionAPI, gera um resumo diário com a OpenAI (visão geral,
 pontos importantes e tarefas pendentes) e exibe tudo em uma interface web
-simples e limpa.
+simples e limpa, com três abas:
+
+- **Resumos** — os resumos por dia; cada tarefa pendente tem um `+` que a
+  manda para a sua lista.
+- **Tarefas** — a lista, com conclusão, remoção e criação manual.
+- **Configurações** — horário do disparo, liga/desliga do resumo automático,
+  fuso horário e o botão "Resumir agora".
 
 Veja [CLAUDE.md](./CLAUDE.md) para o contexto completo do projeto (arquitetura,
 decisões e pontos em aberto) e [spec.md](./spec.md) para a especificação original.
@@ -42,13 +48,26 @@ curl -X POST http://localhost:3000/webhook/evolution \
   -d '{"data":{"group_id":"SEU_WHATSAPP_GROUP_ID","sender_name":"Fulano","content":"Bora resolver a lista de exercícios até sexta"}}'
 ```
 
-Depois, dispare a geração do resumo manualmente (sem esperar o cron das 22h):
+Depois, dispare a geração do resumo sem esperar o horário agendado — pelo
+botão "Resumir agora" na aba Configurações ou direto na API:
 
 ```bash
 curl -X POST http://localhost:3000/api/summaries/generate
 ```
 
 E veja o resultado em `GET /api/summaries` ou direto no frontend.
+
+## Mudando o horário do resumo
+
+O horário fica no banco (tabela `app_settings`), não no `.env`. Mude pela aba
+**Configurações** ou pela API — nos dois casos o cron é **reagendado na hora**,
+sem reiniciar o container:
+
+```bash
+curl -X PUT http://localhost:3000/api/settings \
+  -H "Content-Type: application/json" \
+  -d '{"summary_time":"21:30","auto_enabled":true}'
+```
 
 ## Schema do banco
 

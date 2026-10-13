@@ -1,10 +1,12 @@
 const supabase = require('../config/supabaseClient');
 const messagesService = require('./messages.service');
 const openaiService = require('./openai.service');
+const settingsService = require('./settings.service');
 
 // Gera o resumo do dia e salva no banco (sem mensagens, não cria nada)
-async function generateAndSaveDailySummary(dateStr) {
-  const messages = await messagesService.getMessagesForDate(dateStr);
+async function generateAndSaveDailySummary(dateStr, timezone) {
+  const fuso = timezone || (await settingsService.getSettings()).timezone;
+  const messages = await messagesService.getMessagesForDate(dateStr, fuso);
 
   if (messages.length === 0) {
     console.log(`[summaries] Nenhuma mensagem em ${dateStr}, resumo não gerado.`);

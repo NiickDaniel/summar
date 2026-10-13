@@ -1,33 +1,36 @@
 const summariesService = require('../services/summaries.service');
-const { getTodayBrtDateStr } = require('../utils/date');
+const settingsService = require('../services/settings.service');
+const { getTodayDateStr } = require('../utils/date');
+const { responderErro } = require('../utils/http');
 
 // GET /api/summaries: lista os resumos do mais recente para o mais antigo
 async function getSummaries(req, res) {
   try {
-    const summaries = await summariesService.listSummaries();
-    return res.status(200).json(summaries);
+    return res.status(200).json(await summariesService.listSummaries());
   } catch (err) {
-    console.error('[summaries] Erro ao listar resumos:', err);
-    return res.status(500).json({ error: 'Falha ao buscar os resumos.' });
+    return responderErro(res, err, 'summaries', 'Falha ao buscar os resumos.');
   }
 }
 
-// POST /api/summaries/generate: gera o resumo de um dia sob demanda (padrão: hoje)
+// POST /api/summaries/generate: o "resumir agora" da tela (padrão: hoje)
 async function generateSummary(req, res) {
   try {
-    const dateStr = (req.body && req.body.date) || getTodayBrtDateStr();
-    const summary = await summariesService.generateAndSaveDailySummary(dateStr);
+    const { timezone } = await settingsService.getSettings();
+    const dateStr = (req.body && req.body.date) || getTodayDateStr(timezone);
+
+    const summary = await summariesService.generateAndSaveDailySummary(dateStr, timezone);
 
     if (!summary) {
-      return res
-        .status(200)
-        .json({ generated: false, message: `Sem mensagens em ${dateStr}.` });
+      return res.status(200).json({
+        generated: false,
+        date: dateStr,
+        message: `Nenhuma mensagem encontrada em ${dateStr}.`,
+      });
     }
 
-    return res.status(200).json({ generated: true, summary });
+    return res.status(200).json({ generated: true, date: dateStr, summary });
   } catch (err) {
-    console.error('[summaries] Erro ao gerar resumo manualmente:', err);
-    return res.status(500).json({ error: 'Falha ao gerar o resumo.' });
+    return responderErro(res, err, 'summaries', 'Falha ao gerar o resumo.');
   }
 }
 

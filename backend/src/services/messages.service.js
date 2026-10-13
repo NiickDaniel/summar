@@ -1,6 +1,6 @@
 const supabase = require('../config/supabaseClient');
 const env = require('../config/env');
-const { getBrtDayRangeUtc } = require('../utils/date');
+const { getDayRangeUtc, FUSO_PADRAO } = require('../utils/date');
 
 // Salva no banco uma mensagem recebida pelo webhook
 async function saveRawMessage({ groupId, senderName, content }) {
@@ -15,8 +15,8 @@ async function saveRawMessage({ groupId, senderName, content }) {
 }
 
 // Busca as mensagens do grupo monitorado em um dia
-async function getMessagesForDate(dateStr) {
-  const { startIso, endIso } = getBrtDayRangeUtc(dateStr);
+async function getMessagesForDate(dateStr, timezone = FUSO_PADRAO) {
+  const { startIso, endIso } = getDayRangeUtc(dateStr, timezone);
 
   const { data, error } = await supabase
     .from('raw_messages')

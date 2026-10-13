@@ -1,15 +1,22 @@
 # CLAUDE.md
 
 Contexto do projeto **Summar** para sessões futuras do Claude Code (ou de
-qualquer outro dev). Especificação original em [spec.md](./spec.md).
+qualquer outro dev). A especificação original (`spec.md`) ficou só na máquina
+do Nicolas — foi removida do versionamento no commit `8c58bd5`.
 
 ## O que é
 
 Resumidor diário de um grupo de WhatsApp da faculdade. Um webhook recebe as
-mensagens do grupo, elas ficam salvas cruas no banco, e todo dia às 22h
-(horário de Brasília) um cron gera um resumo do dia via OpenAI — visão geral,
-pontos importantes e tarefas/atividades pendentes — que fica disponível numa
-interface web.
+mensagens do grupo, elas ficam salvas cruas no banco, e no horário configurado
+(padrão 22h de Brasília) um cron gera um resumo do dia via OpenAI — visão
+geral, pontos importantes e tarefas/atividades pendentes — que fica disponível
+numa interface web com três abas:
+
+- **Resumos**: os resumos por dia, em cards expansíveis. Cada tarefa pendente
+  tem um botão `+` que a envia para a lista de tarefas.
+- **Tarefas**: lista própria, com conclusão, remoção e criação manual.
+- **Configurações**: horário do disparo, liga/desliga do resumo automático,
+  fuso horário e o botão "Resumir agora".
 
 ## Stack
 
@@ -29,13 +36,15 @@ Nginx, exatamente como pedido na spec.
 ```
 EvolutionAPI --POST--> backend /webhook/evolution --> Supabase.raw_messages
                                                               |
-                                              cron 22h BRT (node-cron)
+                                   cron no horário de app_settings (node-cron)
                                                               |
                                              busca mensagens do dia --> OpenAI
                                                               |
                                                    Supabase.daily_summaries
                                                               |
 frontend (Nginx, :8080) --GET /api/summaries--> backend (:3000) --> Supabase
+                        --GET/POST/PATCH/DELETE /api/todos-->
+                        --GET/PUT /api/settings----------->
 ```
 
 Detalhes que importam:
@@ -48,15 +57,28 @@ Detalhes que importam:
   etc. — ver [backend/src/controllers/webhook.controller.js](./backend/src/controllers/webhook.controller.js))
   quanto um payload simplificado `{ data: { group_id, sender_name, content } }`,
   para testar com `curl` sem precisar de uma instância real da EvolutionAPI.
-- O cron roda com `node-cron` no timezone `America/Sao_Paulo`. A conversão de
-  datas assume BRT = UTC-03:00 fixo (Brasil não tem mais horário de verão
-  desde 2019), ver [backend/src/utils/date.js](./backend/src/utils/date.js).
-- Existe um endpoint extra, **fora da spec original**, para facilitar
-  demonstração/teste sem esperar as 22h: `POST /api/summaries/generate`
-  (opcionalmente `{ "date": "YYYY-MM-DD" }` no body) roda a mesma lógica do
-  cron sob demanda.
+- **O horário do cron vem do banco, não do `.env`.** A tabela `app_settings`
+  manda, e `PUT /api/settings` **reagenda em runtime** (para a tarefa antiga e
+  cria outra) — não precisa reiniciar o container. As variáveis
+  `CRON_SCHEDULE`/`CRON_TIMEZONE` servem apenas para semear a linha de
+  settings caso ela não exista.
+- `node-cron` 3.x **não tem `destroy()`**, só `stop()`. Por isso
+  `aplicarAgendamento()` para a tarefa atual e cria uma nova em vez de tentar
+  reconfigurar a existente.
+- O recorte do dia respeita o fuso das settings:
+  [backend/src/utils/date.js](./backend/src/utils/date.js) descobre o offset
+  via `Intl` com `timeZoneName: 'longOffset'`, então mudar o fuso na tela move
+  tanto o disparo quanto as fronteiras do dia de forma coerente. Se o offset
+  não puder ser lido, cai para `-03:00`.
+- `POST /api/summaries/generate` é o "Resumir agora" da tela (aceita
+  `{ "date": "YYYY-MM-DD" }`; sem isso usa hoje no fuso configurado).
 - `daily_summaries.date` tem constraint `unique`; gerar de novo o resumo de um
-  dia faz `upsert` (sobrescreve o resumo existente daquele dia).
+  dia faz `upsert` (sobrescreve o resumo existente daquele dia) — vale lembrar
+  disso ao usar o "Resumir agora".
+- `POST /api/todos` é idempotente para título repetido: se já existe uma
+  tarefa **pendente** com o mesmo título, devolve a existente com `200` em vez
+  de criar duplicata (`201` só quando cria de fato). Protege o duplo clique no
+  botão `+` dos resumos.
 
 ## Estrutura de pastas
 
@@ -65,28 +87,42 @@ summar/
 ├── backend/
 │   ├── src/
 │   │   ├── config/       # env.js, supabaseClient.js
-│   │   ├── controllers/  # webhook.controller.js, summaries.controller.js
-│   │   ├── routes/       # webhook.routes.js, summaries.routes.js
-│   │   ├── services/     # messages, summaries, openai, cron
-│   │   ├── utils/        # date.js (BRT helpers)
+│   │   ├── controllers/  # webhook, summaries, todos, settings
+│   │   ├── routes/       # webhook, summaries, todos, settings
+│   │   ├── services/     # messages, summaries, openai, cron, todos, settings
+│   │   ├── utils/        # date.js (fusos), http.js (erro -> status)
 │   │   ├── app.js        # express app + middlewares
 │   │   └── server.js     # entrypoint (listen + start cron)
 │   ├── .env               # segredos reais (gitignored)
 │   ├── .env.example        # template documentado
 │   └── Dockerfile
 ├── frontend/
-│   ├── index.html   # shell (sidebar + área de conteúdo)
-│   ├── styles.css    # scrollbar, seleção, animação do accordion dos cards
-│   ├── app.js         # fetch de /api/summaries + toda a renderização
+│   ├── index.html     # shell: sidebar, cabeçalho e as 3 seções de view
+│   ├── styles.css      # scrollbar, accordion, nav-item e o switch
+│   ├── app.js           # núcleo: API, helpers, toast e troca de abas
+│   ├── summaries.js      # aba Resumos (+ envio de tarefa para a lista)
+│   ├── todos.js           # aba Tarefas
+│   ├── settings.js         # aba Configurações
 │   ├── nginx.conf
 │   └── Dockerfile
 ├── supabase/
-│   └── schema.sql    # DDL de raw_messages e daily_summaries (idempotente)
+│   └── schema.sql    # DDL das 4 tabelas (idempotente)
 ├── docker-compose.yml # sobe backend (:3000) e frontend (:8080) juntos
 ├── CLAUDE.md
-├── README.md
-└── spec.md
+└── README.md
 ```
+
+O frontend **não tem build step nem módulos ES**: os arquivos são carregados
+por `<script>` na ordem `app.js` → views. O `app.js` publica o namespace
+`window.Summar` (API, helpers, `registerView`, `stats`, `toast`); cada view se
+registra com `Summar.registerView(nome, { titulo, subtitulo, onEnter,
+onRefresh, onBoot })` e o boot acontece no `DOMContentLoaded`, quando todos os
+scripts já rodaram. `onBoot` existe para as views que alimentam a sidebar
+(tarefas e configurações) carregarem mesmo sem o usuário abrir a aba.
+
+⚠️ Ao adicionar um arquivo JS no frontend, inclua-o **no `<script>` do
+`index.html` e no `COPY` do `frontend/Dockerfile`** — senão ele não vai para a
+imagem.
 
 ## Banco de dados
 
@@ -105,8 +141,15 @@ Tabelas:
   `key_points text`, `pending_tasks text`, `created_at timestamptz`. `key_points`
   e `pending_tasks` são salvos como texto com uma linha por item (`"- item"`);
   o frontend faz o parse de volta para lista.
+- **`todos`**: `id uuid pk`, `title text`, `source_date date` (dia do resumo
+  que originou a tarefa; `null` quando criada na mão), `done boolean`,
+  `created_at`, `completed_at`.
+- **`app_settings`**: linha única fixada por `check (id = 1)`. Campos:
+  `summary_time text` (HH:MM, com check de formato no banco), `timezone text`,
+  `auto_enabled boolean`, `updated_at`. O `insert ... on conflict do nothing`
+  no schema garante que a linha exista.
 
-RLS está habilitado nas duas tabelas — só o backend acessa o banco, usando a
+RLS está habilitado nas quatro tabelas — só o backend acessa o banco, usando a
 `service_role` key (que ignora RLS por design).
 
 ## Variáveis de ambiente (`backend/.env`)
@@ -118,8 +161,31 @@ RLS está habilitado nas duas tabelas — só o backend acessa o banco, usando a
 | `OPENAI_API_KEY`    | Chave da OpenAI                                                 | preenchido a partir do `.env.dev`         |
 | `OPENAI_MODEL`      | Modelo usado no resumo                                          | `gpt-4o-mini` (padrão)                    |
 | `WHATSAPP_GROUP_ID` | ID do grupo monitorado (`xxxxx@g.us`)                            | `120363319840837485@g.us` (grupo "Geral") |
-| `CRON_SCHEDULE`     | Expressão cron do resumo diário                                 | `0 22 * * *`                              |
-| `CRON_TIMEZONE`     | Timezone do cron                                                | `America/Sao_Paulo`                       |
+| `CRON_SCHEDULE`     | **Só semeia** a linha de `app_settings` na primeira subida      | `0 22 * * *`                              |
+| `CRON_TIMEZONE`     | **Só semeia** o fuso na primeira subida                         | `America/Sao_Paulo`                       |
+
+Depois que a linha de `app_settings` existe, **quem manda é o banco**: mudar
+`CRON_SCHEDULE` no `.env` não altera mais nada. O horário se muda pela aba
+Configurações (ou por `PUT /api/settings`).
+
+## Rotas da API
+
+| Método | Rota | Para que serve |
+| --- | --- | --- |
+| `POST` | `/webhook/evolution` | Recebe as mensagens da EvolutionAPI |
+| `GET` | `/api/summaries` | Lista os resumos (mais recente primeiro) |
+| `POST` | `/api/summaries/generate` | "Resumir agora"; body opcional `{ "date": "YYYY-MM-DD" }` |
+| `GET` | `/api/todos` | Lista as tarefas (pendentes primeiro) |
+| `POST` | `/api/todos` | Cria tarefa `{ title, source_date? }` — `201` nova, `200` já existia |
+| `PATCH` | `/api/todos/:id` | Conclui/reabre (`{ done }`) ou renomeia (`{ title }`) |
+| `DELETE` | `/api/todos/:id` | Remove a tarefa (`204`) |
+| `GET` | `/api/settings` | Configurações + estado do agendamento |
+| `PUT` | `/api/settings` | Salva e **reagenda o cron na hora** |
+| `GET` | `/health` | Healthcheck |
+
+Erros de entrada voltam `400` com a mensagem pronta para a tela; os serviços
+marcam isso com `err.status` e [`utils/http.js`](./backend/src/utils/http.js)
+traduz (sem `status` vira `500` e loga).
 
 `backend/.env` está no `.gitignore`. Quem for reproduzir o setup usa
 `backend/.env.example` como template. `.env.dev`, na raiz, foi o arquivo com
@@ -132,9 +198,11 @@ Pedido explícito: visual limpo, cards arredondados, sidebar lateral, paleta
 neutra (branco/cinza) com azul bem claro de destaque.
 
 - Layout: sidebar fixa à esquerda (`w-72`, branca, `border-r`) com marca,
-  navegação, um bloco de estatísticas (total de dias resumidos + data do
-  último resumo, calculado no `app.js`) e um modal "Como funciona". Em telas
-  pequenas a sidebar vira um drawer (`-translate-x-full` + overlay).
+  navegação (Resumos / Tarefas / Configurações, classe `.nav-item` com
+  modificador `.ativo`), um bloco de estatísticas (dias resumidos, último
+  resumo e tarefas abertas), o texto do agendamento vigente e um modal "Como
+  funciona". Em telas pequenas a sidebar vira um drawer (`-translate-x-full` +
+  overlay).
 - Paleta: fundo `slate-50`, cards `bg-white` com `border-slate-200` e
   `shadow-card` (sombra customizada, bem sutil), acento em `brand-*` (escala
   azul clara definida no `tailwind.config` inline do `index.html`, baseada em
@@ -252,4 +320,10 @@ cron das 22h sobrescreve esse dia via upsert quando houver mensagens reais.
 - Sem testes automatizados (fora de escopo da spec original; projeto
   acadêmico).
 - Sem autenticação nas rotas — aceitável para o escopo do projeto, mas seria
-  o primeiro item a endurecer antes de qualquer uso além do acadêmico.
+  o primeiro item a endurecer antes de qualquer uso além do acadêmico. Agora
+  pesa mais: `PUT /api/settings` e as rotas de tarefas **escrevem** sem
+  qualquer credencial.
+- A aba Tarefas não tem edição de título pela tela, embora o
+  `PATCH /api/todos/:id` já aceite `{ title }`.
+- A VM `10.192.21.91` continua rodando a versão anterior; as abas novas só
+  chegam lá no próximo deploy (ver seção Deploy).
